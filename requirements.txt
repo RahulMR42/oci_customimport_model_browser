@@ -1,0 +1,2 @@
+# This app intentionally uses only the Python standard library.
+# Keep this file so start.sh and common deployment tooling have a stable entry point.

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Oracle Custom Import Model Browser</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero">
+        <p class="eyebrow">Oracle Generative AI</p>
+        <h1>Custom Import Model Browser</h1>
+        <p class="hero-copy">
+          Search Oracle's imported-model documentation, browse supported model families, and inspect the
+          model IDs and recommended dedicated cluster shapes exposed by the docs.
+        </p>
+      </section>
+
+      <section class="toolbar">
+        <label class="search-field">
+          <span>Basic web search</span>
+          <input
+            id="searchInput"
+            type="search"
+            placeholder="Search by family, model ID, capability, or shape. Examples: qwen*, reason, embed, llma"
+          />
+        </label>
+        <div class="toolbar-actions">
+          <div class="theme-toggle" role="tablist" aria-label="Color theme">
+            <button id="greyThemeButton" type="button" class="theme-button is-active" aria-pressed="true">
+              Grey
+            </button>
+            <button id="darkThemeButton" type="button" class="theme-button" aria-pressed="false">
+              Dark
+            </button>
+          </div>
+          <button id="searchButton" class="primary">Search</button>
+          <button id="refreshButton">Refresh from Oracle Docs</button>
+        </div>
+      </section>
+
+      <section class="status-row">
+        <div class="stat-card">
+          <span>Families</span>
+          <strong id="familyCount">-</strong>
+        </div>
+        <div class="stat-card">
+          <span>Models</span>
+          <strong id="modelCount">-</strong>
+        </div>
+        <div class="stat-card stat-card--wide">
+          <span>Source</span>
+          <strong id="generatedAt">Waiting for first fetch</strong>
+        </div>
+      </section>
+
+      <section class="feedback" id="feedback"></section>
+      <details class="crawl-details">
+        <summary>Crawled Oracle subpages</summary>
+        <div id="crawlPages" class="crawl-pages"></div>
+      </details>
+      <section id="results" class="results"></section>
+      <footer class="app-footer">Creator : Rahul MR , Version 0.0.1</footer>
+    </main>
+
+    <template id="familyTemplate">
+      <details class="family-card" open>
+        <summary>
+          <div>
+            <span class="family-name"></span>
+            <p class="family-meta"></p>
+          </div>
+          <span class="pill family-model-count"></span>
+        </summary>
+        <div class="family-body">
+          <p class="family-link-row">
+            <a class="family-link" rel="noreferrer" target="_blank">Open Oracle docs page</a>
+          </p>
+          <p class="family-error" hidden></p>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Section</th>
+                  <th>Model ID</th>
+                  <th>Capability</th>
+                  <th>Recommended shape</th>
+                </tr>
+              </thead>
+              <tbody class="family-model-rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </template>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
