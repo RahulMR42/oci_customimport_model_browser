@@ -11,6 +11,9 @@ const crawlPages = document.getElementById("crawlPages");
 const results = document.getElementById("results");
 const familyTemplate = document.getElementById("familyTemplate");
 const THEME_STORAGE_KEY = "customimport-theme";
+// Resolve API requests beside this script so deployments under a route prefix work.
+const APP_ROOT_URL = new URL(".", document.currentScript.src);
+const MODELS_API_URL = new URL("api/models", APP_ROOT_URL);
 
 function applyTheme(theme) {
   const resolvedTheme = theme === "dark" ? "dark" : "grey";
@@ -34,7 +37,12 @@ async function loadCatalog({ refresh = false } = {}) {
 
   setFeedback(refresh ? "Refreshing from Oracle docs..." : "Loading models...");
   try {
-    const response = await fetch(`/api/models?${params.toString()}`);
+    const response = await fetch(`${MODELS_API_URL}?${params.toString()}`);
+    const contentType = response.headers.get("Content-Type") || "";
+    if (!contentType.includes("application/json")) {
+      window.location.assign(new URL("login", APP_ROOT_URL));
+      return;
+    }
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.detail || payload.error || "Request failed.");

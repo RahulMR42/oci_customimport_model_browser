@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Oracle Custom Import Model Browser</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="page-shell">
@@ -37,6 +37,9 @@
           </div>
           <button id="searchButton" class="primary">Search</button>
           <button id="refreshButton">Refresh from Oracle Docs</button>
+          <form class="logout-form" method="post" action="logout">
+            <button type="submit">Sign out</button>
+          </form>
         </div>
       </section>
 
@@ -95,6 +98,6 @@
       </details>
     </template>
 
-    <script src="/app.js" defer></script>
+    <script src="app.js" defer></script>
   </body>
 </html>

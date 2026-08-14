@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import json
+import hmac
+from html import escape
 import os
 import re
+import secrets
+import string
 import threading
 import time
 from dataclasses import dataclass
@@ -25,6 +29,39 @@ HTTP_TIMEOUT_SECONDS = 20
 USER_AGENT = "customimport-model-browser/0.1 (+https://docs.oracle.com/)"
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_CRAWL_PAGES = 64
+BASE_PATH = os.getenv("APP_BASE_PATH", "").rstrip("/")
+APP_USER_NAME = os.getenv("APP_USER_NAME") or "oci"
+APP_PASSWORD = os.getenv("APP_PASSWORD")
+PASSWORD_WAS_GENERATED = not APP_PASSWORD
+SESSION_COOKIE_NAME = "customimport_session"
+SESSION_SECRET = secrets.token_urlsafe(32)
+
+
+def generate_password(length: int = 16) -> str:
+    """Create a 16-character password with letters, digits, and symbols."""
+    if length < 4:
+        raise ValueError("Password length must be at least 4 characters.")
+    pools = (string.ascii_lowercase, string.ascii_uppercase, string.digits, "!@#$%^&*_-+=")
+    password = [secrets.choice(pool) for pool in pools]
+    alphabet = "".join(pools)
+    password.extend(secrets.choice(alphabet) for _ in range(length - len(password)))
+    secrets.SystemRandom().shuffle(password)
+    return "".join(password)
+
+
+if PASSWORD_WAS_GENERATED:
+    APP_PASSWORD = generate_password()
+
+
+def make_session_token() -> str:
+    """Return a signed token for the single configured application user."""
+    signature = hmac.digest(SESSION_SECRET.encode(), APP_USER_NAME.encode(), "sha256")
+    return signature.hex()
+
+
+def is_valid_session(token: str) -> bool:
+    """Validate a session cookie without storing session state server-side."""
+    return bool(token) and hmac.compare_digest(token, make_session_token())
 
 
 def normalize_space(value: str) -> str:
@@ -510,11 +547,46 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
     def do_GET(self) -> None:  # noqa: N802 - required by the stdlib handler interface
-        parsed = urlparse(self.path)
+        request_path = self._strip_base_path(self.path)
+        parsed = urlparse(request_path)
+        if parsed.path == "/api/health":
+            self._write_json(200, {"ok": True})
+            return
+        if parsed.path == "/login":
+            self._write_login_page(error=parse_qs(parsed.query).get("error", [""])[0] == "1")
+            return
+        if not self._is_authenticated():
+            # OCI's hosted-application readiness contract checks the root route
+            # for a 200 response. Render the sign-in form there rather than
+            # redirecting, while continuing to protect every application route.
+            if parsed.path == "/":
+                self._write_login_page(error=False)
+                return
+            self._redirect_to_login()
+            return
         if parsed.path == "/api/models":
             self._handle_models_api(parsed.query)
             return
+        self.path = request_path
         super().do_GET()
+
+    def do_POST(self) -> None:  # noqa: N802 - required by the stdlib handler interface
+        request_path = self._strip_base_path(self.path)
+        parsed = urlparse(request_path)
+        if parsed.path == "/login":
+            self._handle_login()
+            return
+        if parsed.path == "/logout":
+            self._handle_logout()
+            return
+        self.send_error(404, "Not found")
+
+    @staticmethod
+    def _strip_base_path(path: str) -> str:
+        """Remove Citizen's route prefix before matching app routes or static files."""
+        if BASE_PATH and (path == BASE_PATH or path.startswith(f"{BASE_PATH}/")):
+            return path[len(BASE_PATH) :] or "/"
+        return path
 
     def _handle_models_api(self, raw_query: str) -> None:
         params = parse_qs(raw_query)
@@ -533,6 +605,96 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "source_url": ROOT_DOC_URL,
                 },
             )
+
+    def _handle_login(self) -> None:
+        """Authenticate the configured user and create a secure session cookie."""
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_form = self.rfile.read(content_length).decode("utf-8", errors="replace")
+        form = parse_qs(raw_form)
+        username = form.get("username", [""])[0]
+        password = form.get("password", [""])[0]
+        if not (
+            hmac.compare_digest(username, APP_USER_NAME)
+            and hmac.compare_digest(password, APP_PASSWORD or "")
+        ):
+            self._redirect(self._app_path("/login?error=1"))
+            return
+
+        self.send_response(303)
+        self.send_header(
+            "Set-Cookie",
+            f"{SESSION_COOKIE_NAME}={make_session_token()}; HttpOnly; SameSite=Lax; Path={self._cookie_path()}",
+        )
+        self.send_header("Location", self._app_path("/"))
+        self.end_headers()
+
+    def _handle_logout(self) -> None:
+        """Clear the browser session cookie."""
+        self.send_response(303)
+        self.send_header(
+            "Set-Cookie",
+            f"{SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Max-Age=0; Path={self._cookie_path()}",
+        )
+        self.send_header("Location", self._app_path("/login"))
+        self.end_headers()
+
+    def _is_authenticated(self) -> bool:
+        """Return whether the request carries a valid application session."""
+        cookies = self.headers.get("Cookie", "").split(";")
+        for cookie in cookies:
+            name, separator, value = cookie.strip().partition("=")
+            if separator and name == SESSION_COOKIE_NAME:
+                return is_valid_session(value)
+        return False
+
+    def _redirect_to_login(self) -> None:
+        self._redirect(self._app_path("/login"))
+
+    def _redirect(self, location: str) -> None:
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.end_headers()
+
+    def _app_path(self, path: str) -> str:
+        """Build a route that keeps an ingress-provided application prefix."""
+        base_path = BASE_PATH or self.headers.get("X-Forwarded-Prefix", "").rstrip("/")
+        if base_path:
+            return f"{base_path}{path}"
+
+        # OCI Generative AI Hosted Applications route traffic beneath an
+        # inference-service path. Relative URLs retain that path, while an
+        # absolute /login would incorrectly target the inference service root.
+        if path == "/":
+            return "."
+        return path.lstrip("/")
+
+    def _cookie_path(self) -> str:
+        """Scope the session cookie to the hosted application's ingress path."""
+        return BASE_PATH or self.headers.get("X-Forwarded-Prefix", "").rstrip("/") or "/"
+
+    def _write_login_page(self, *, error: bool) -> None:
+        """Render the small credential form without serving app assets anonymously."""
+        error_message = '<p class="error" role="alert">Invalid username or password.</p>' if error else ""
+        username = escape(APP_USER_NAME)
+        page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in | Oracle Custom Import Model Browser</title>
+<style>
+body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: "Segoe UI", sans-serif; color: #1f2933; background: linear-gradient(135deg, #e8edf3, #cfd7e2); }}
+form {{ width: min(400px, calc(100vw - 40px)); padding: 32px; border-radius: 22px; background: #fff; box-shadow: 0 22px 45px rgba(34,48,64,.16); }}
+h1 {{ margin: 0 0 8px; }} p {{ color: #52606d; line-height: 1.5; }} label {{ display: grid; gap: 7px; margin-top: 18px; font-weight: 600; }} input {{ padding: 12px 14px; border: 1px solid #b8c3d1; border-radius: 10px; font: inherit; }} button {{ width: 100%; margin-top: 24px; padding: 12px; border: 0; border-radius: 10px; background: #27485d; color: white; font: inherit; font-weight: 700; cursor: pointer; }} .error {{ padding: 10px 12px; border-radius: 8px; color: #a61b12; background: #fce9e7; }}
+</style></head><body><form method="post" action="{self._app_path('/login')}">
+<h1>Sign in</h1><p>Oracle Custom Import Model Browser</p>{error_message}
+<label>Username<input name="username" autocomplete="username" value="{username}" required autofocus></label>
+<label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+<button type="submit">Sign in</button></form></body></html>"""
+        encoded = page.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def _write_json(self, status_code: int, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload, indent=2).encode("utf-8")
@@ -553,8 +715,11 @@ def main() -> None:
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8080"))
     server = ThreadingHTTPServer((host, port), AppHandler)
-    print(f"Serving Oracle custom-import browser on http://{host}:{port}")
-    print(f"Source: {ROOT_DOC_URL}")
+    print(f"Serving Oracle custom-import browser on http://{host}:{port}", flush=True)
+    print(f"Source: {ROOT_DOC_URL}", flush=True)
+    print(f"Login username: {APP_USER_NAME}", flush=True)
+    if PASSWORD_WAS_GENERATED:
+        print(f"Generated APP_PASSWORD: {APP_PASSWORD}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -30,6 +30,7 @@ Pages that do not produce at least one extracted model row are not shown in the 
 - Removes duplicate model entries and adds a Hugging Face link for each model id when available
 - Lets you switch the UI between `grey` and `dark` themes
 - Caches results in memory for six hours unless you hit refresh
+- Requires a login before serving the application or model API
 - Avoids npm and third-party Python dependencies
 
 ## Search Behavior
@@ -132,6 +133,19 @@ Optional environment variables:
 ```bash
 PORT=8090 HOST=0.0.0.0 python3 app.py
 ```
+
+### Login credentials
+
+The app requires a username and password. Configure them with environment variables:
+
+```bash
+APP_USER_NAME=my-user APP_PASSWORD='My-Strong-Passphrase!' python3 app.py
+```
+
+- `APP_USER_NAME` defaults to `oci` when unset or empty.
+- `APP_PASSWORD` is generated as a complex 16-character value when unset or empty.
+- A generated password is printed once to the application console at startup; save it from the logs before signing in.
+- The `GET /api/health` endpoint remains unauthenticated for container health checks.
 
 If you prefer to bootstrap the virtual environment yourself:
 

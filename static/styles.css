@@ -131,6 +131,10 @@ h1 {
   align-items: center;
 }
 
+.logout-form {
+  margin: 0;
+}
+
 .theme-toggle {
   display: inline-flex;
   gap: 6px;
@@ -454,7 +458,12 @@ td code {
   }
 
   .toolbar-actions button,
-  .theme-toggle {
+  .theme-toggle,
+  .logout-form {
     flex: 1;
+  }
+
+  .logout-form button {
+    width: 100%;
   }
 }

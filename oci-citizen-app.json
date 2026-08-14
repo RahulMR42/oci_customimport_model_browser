@@ -1,0 +1,37 @@
+{
+  "runtime": "docker",
+  "dockerfile": "Dockerfile",
+  "route_slug": "custom-import-model-browser",
+  "display_name": "Oracle Custom Import Model Browser",
+  "routes": {
+    "/": {
+      "status": 200,
+      "headers": {
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  "operational_review": {
+    "tests": {
+      "status": "passed",
+      "commands": [
+        "python3 -m compileall -q app.py"
+      ],
+      "notes": "No formal test suite is present; Python syntax and base-path smoke checks passed."
+    },
+    "health_check": {
+      "endpoint": "/api/health",
+      "post_deploy_checks": [
+        "get_application_status",
+        "route fetch",
+        "health endpoint",
+        "model search workflow"
+      ]
+    },
+    "data_handling": {
+      "confidentiality": "public",
+      "ephemeral_cleanup": "The app stores only an in-memory six-hour cache of public Oracle documentation; it writes no persistent user data or temporary artifacts.",
+      "sensitive_logging": "The app does not log secrets, credentials, or user-provided data."
+    }
+  }
+}
