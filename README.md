@@ -104,14 +104,14 @@ Response fields include:
 Preferred:
 
 ```bash
-cd /Users/rahulmr/LocalMaster/GENAI/my_genai/codex/customimport
+cd ./customimport
 bash start.sh
 ```
 
 Manual:
 
 ```bash
-cd /Users/rahulmr/LocalMaster/GENAI/my_genai/codex/customimport
+cd ./customimport
 python3 app.py
 ```
 
